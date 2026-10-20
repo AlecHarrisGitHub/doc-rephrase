@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {color-scheme: light; --ink:#202c29; --muted:#65716b; --green:#18664e; --line:#dce3dc;}
+    * {box-sizing:border-box}
+    body {margin:0; padding:20px 16px 28px; color:var(--ink); background:#f8faf7; font:13px/1.5 system-ui,sans-serif;}
+    .eyebrow {font-size:10px; font-weight:750; letter-spacing:.14em; color:var(--green); text-transform:uppercase}
+    h1 {font-family:Georgia,serif; font-weight:normal; font-size:27px; line-height:1.15; margin:6px 0 10px}
+    p {margin:6px 0 14px} .muted,small {color:var(--muted)} small {font-size:11px; display:block; margin-top:7px}
+    label {display:block; font-weight:650; margin:16px 0 6px}
+    input,select,textarea,button {font:inherit; border-radius:8px}
+    input,select,textarea {width:100%; padding:10px; border:1px solid #cbd6cc; background:white; color:var(--ink)}
+    textarea {resize:vertical; min-height:76px; line-height:1.55}
+    button {cursor:pointer; border:1px solid var(--line); padding:10px 12px; background:white; color:var(--ink); font-weight:650}
+    button:disabled {opacity:.5; cursor:wait}
+    button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible {outline:3px solid #8bbda8; outline-offset:2px}
+    .primary {width:100%; background:var(--green); color:white; border-color:var(--green)}
+    .secondary {width:100%; margin-top:8px}
+    .row {display:flex; gap:8px; margin-top:10px}.row button {flex:1}
+    .card {background:white; border:1px solid var(--line); border-radius:12px; padding:13px; margin:16px 0}
+    .original {white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:auto; font-family:Georgia,serif; color:#4a5751; margin-top:8px}
+    .divider {height:1px; background:var(--line); margin:20px 0}
+    details {margin:12px 0} summary {cursor:pointer; font-weight:650}
+    #status {border-radius:8px; padding:10px; background:#e7efe8; margin:14px 0; white-space:pre-wrap; overflow-wrap:anywhere}
+    #status.error {background:#fae9e3; color:#853723}
+    [hidden] {display:none!important}
+    #result textarea {min-height:110px; font-family:Georgia,serif; font-size:15px}
+    .hint {font-size:12px; color:var(--muted); margin:0 0 12px}
+    .hint kbd {font:600 12px/1 system-ui,sans-serif; color:var(--ink); background:white; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:3px 6px}
+    #note {font-size:12px; color:var(--muted); margin:10px 0}
+    #context {font-size:10px; color:var(--muted); margin-top:12px}
+    .pill {display:inline-block; font-size:10px; color:var(--green); background:#e6efe7; padding:3px 7px; border-radius:20px}
+    a {color:var(--green)}
+  </style>
+</head>
+<body>
+  <div id="shortcutHint" class="hint" hidden></div>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  <section id="selected" class="card" hidden>
+    <span class="eyebrow">Your selection</span> <span id="selectionInfo" class="pill"></span>
+    <div id="original" class="original"></div>
+  </section>
+  <label for="tone">Make it sound…</label>
+  <select id="tone">
+    <option value="natural">Natural and polished</option><option value="concise">More concise</option>
+    <option value="professional">Professional</option><option value="academic">Academic and precise</option>
+    <option value="friendly">Warm and conversational</option>
+  </select>
+  <label for="effort">Effort</label>
+  <select id="effort">
+    <option value="low">Low · fastest</option><option value="medium">Medium</option>
+    <option value="high">High · more careful</option><option value="max">Max · slowest</option>
+  </select>
+  <details><summary>Extra direction</summary>
+    <label for="guidance">Anything to keep in mind?</label>
+    <textarea id="guidance" maxlength="2000" placeholder="e.g. Keep my voice and make the argument easier to follow."></textarea>
+  </details>
+  <button id="generate" class="primary">Suggest a rewrite</button>
+  <small>When you request a rewrite, the tab you’re editing (plus other tabs that fit) is sent to Anthropic’s Claude API through the Doc Rephrase helper on this computer. Images and comments aren’t included.</small>
+  <section id="result" class="card" hidden>
+    <div class="eyebrow">Suggested rewrite</div>
+    <div id="editors"></div><p id="note"></p>
+    <button id="apply" class="primary">Replace original passage</button>
+    <div class="row"><button id="copy">Copy text</button><button id="again">Try again</button></div>
+    <small>Edit the suggestion above before applying. New words use the first selected character’s styling in each paragraph. Paragraph and list formatting stay in place.</small>
+    <div id="context"></div>
+  </section>
+  <div class="divider"></div>
+  <details id="settings">
+    <summary>Connection <span id="helperStatus" class="pill"></span></summary>
+    <p id="helperInfo" class="muted"></p>
+    <button id="recheck" class="secondary">Check connection again</button>
+    <small>Your API key stays in 1Password. The helper reads it only when you request a rewrite, after 1Password approves. This document and its script never see the key.</small>
+  </details>
+  <script>
+    'use strict';
+    const boot = __BOOT_JSON__;
+    const $ = id => document.getElementById(id);
+    let selection = null, busy = false, helper = null, applied = false;
+    const rpc = (method, ...args) => new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[method](...args);
+    });
+    // The Doc Rephrase Chrome extension injects a relay into this frame; it forwards to the local helper.
+    const NOT_CONNECTED = 'Doc Rephrase can’t reach its Chrome extension. Install it (see the setup guide), then reload this document.';
+    let bridgeSeq = 0;
+    const EXTENSION_ID = '__EXTENSION_ID__';
+    function bridge(payload, timeoutMs) {
+      const direct = window.chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function';
+      return direct ? viaRuntime(payload, timeoutMs).catch(e => e.fromHelper ? Promise.reject(e) : viaRelay(payload, timeoutMs)) : viaRelay(payload, timeoutMs);
+    }
+    function viaRuntime(payload, timeoutMs) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(NOT_CONNECTED)), timeoutMs);
+        try {
+          chrome.runtime.sendMessage(EXTENSION_ID, {kind: 'doc-rephrase', payload}, response => {
+            clearTimeout(timer);
+            if (chrome.runtime.lastError || !response) return reject(new Error(NOT_CONNECTED));
+            if (response.ok) resolve(response); else reject(Object.assign(new Error(response.error || 'The Doc Rephrase helper failed.'), {fromHelper: true}));
+          });
+        } catch (e) { clearTimeout(timer); reject(new Error(NOT_CONNECTED)); }
+      });
+    }
+    function viaRelay(payload, timeoutMs) {
+      return new Promise((resolve, reject) => {
+        const id = 'dr-' + Date.now() + '-' + (++bridgeSeq);
+        const timer = setTimeout(() => { window.removeEventListener('message', onMessage); reject(new Error(NOT_CONNECTED)); }, timeoutMs);
+        function onMessage(event) {
+          const data = event.data;
+          if (event.source !== window || !data || data.source !== 'doc-rephrase-extension' || data.id !== id) return;
+          clearTimeout(timer); window.removeEventListener('message', onMessage);
+          const response = data.response || {};
+          if (response.ok) resolve(response); else reject(new Error(response.error || 'The Doc Rephrase helper failed.'));
+        }
+        window.addEventListener('message', onMessage);
+        window.postMessage({source: 'doc-rephrase-page', id, payload}, '*');
+      });
+    }
+    function status(message, error = false) {
+      $('status').textContent = message || ''; $('status').hidden = !message;
+      $('status').classList.toggle('error', error);
+    }
+    function controls() {
+      document.querySelectorAll('button,input,select').forEach(el => { el.disabled = busy; });
+      $('generate').disabled = busy || !helper;
+      $('apply').disabled = busy || applied;
+      $('again').disabled = busy || applied || !helper;
+    }
+    async function run(action) {
+      if (busy) return;
+      busy = true; controls();
+      try { await action(); }
+      catch (e) { status(String(e.message || e).replace(/^(Exception|Error): /, ''), true); }
+      finally { busy = false; controls(); }
+    }
+    function showHelper(value, error) {
+      helper = value && value.configured ? value : null;
+      $('helperStatus').textContent = helper ? 'Ready' : 'Setup needed';
+      $('helperInfo').textContent = helper ? 'Connected to the local helper · ' + helper.model + ' · key from 1Password'
+        : error ? error : !value ? NOT_CONNECTED
+        : !value.op_installed ? 'The helper is installed, but the 1Password CLI is missing. Run: brew install --cask 1password-cli'
+        : 'The helper is installed, but has no 1Password reference yet. Run install-helper.sh with --op-ref.';
+      showShortcut(value && value.shortcut);
+      $('settings').open = !helper; controls();
+      return helper;
+    }
+    function showShortcut(shortcut) {
+      const hint = $('shortcutHint');
+      hint.replaceChildren();
+      if (shortcut) {
+        hint.append('Highlight text, then press ');
+        const key = document.createElement('kbd'); key.textContent = shortcut; hint.append(key);
+        hint.append(' to rewrite it.');
+      } else {
+        hint.textContent = 'Highlight text, then choose Doc Rephrase → Rephrase selection. To add a keyboard shortcut, open chrome://extensions/shortcuts.';
+      }
+      hint.hidden = false;
+    }
+    async function connect() {
+      try { return showHelper(await bridge({type: 'ping'}, 2500)); }
+      catch (e) { return showHelper(null, e.message); }
+    }
+    function captured(value) {
+      selection = value; applied = false;
+      $('selected').hidden = false; $('result').hidden = true;
+      $('original').textContent = value.original;
+      $('selectionInfo').textContent = value.paragraphs === 1 ? '1 paragraph' : value.paragraphs + ' paragraphs';
+      controls();
+    }
+    async function generate() {
+      // Use whatever is highlighted right now; if nothing is, reuse the passage already shown.
+      try { captured(await rpc('captureSelection')); }
+      catch (e) { if (!selection || applied) throw e; }
+      $('result').hidden = true;
+      status('Reading your document…');
+      const prepared = await rpc('prepareRephrase', selection.token, $('tone').value, $('guidance').value, $('effort').value);
+      status('Waiting for 1Password approval and Claude’s rewrite…');
+      const value = await bridge(prepared.request, 630000);
+      $('editors').replaceChildren();
+      value.paragraphs.forEach((text, index) => {
+        const label = document.createElement('label'); label.textContent = value.paragraphs.length > 1 ? 'Paragraph ' + (index + 1) : 'Your editable suggestion';
+        const textarea = document.createElement('textarea'); textarea.id = 'rewrite-' + index;
+        textarea.value = text; label.htmlFor = textarea.id;
+        $('editors').append(label, textarea);
+      });
+      $('note').textContent = value.note;
+      $('context').textContent = prepared.contextTabs + ' tab(s)' + (prepared.skippedTabs ? ' (' + prepared.skippedTabs + ' skipped: over context limit)' : '') + ' · ' + prepared.contextCharacters.toLocaleString() + ' context characters · ' + value.model;
+      $('result').hidden = false; status('Ready to review. Your document has not changed.');
+    }
+    $('generate').onclick = () => run(generate);
+    $('again').onclick = () => run(generate);
+    $('recheck').onclick = () => run(async () => { status(await connect() ? 'Connected.' : ''); });
+    $('apply').onclick = () => run(async () => {
+      status('Checking the original passage and applying your edit…');
+      await rpc('applyRephrase', selection.token, Array.from($('editors').querySelectorAll('textarea'), el => el.value));
+      applied = true; selection = null;
+      status('Rewrite applied.');
+    });
+    $('copy').onclick = () => run(async () => {
+      const text = Array.from($('editors').querySelectorAll('textarea'), el => el.value).join('\n');
+      try { await navigator.clipboard.writeText(text); }
+      catch (e) {
+        const area = document.createElement('textarea'); area.value = text; document.body.append(area); area.select();
+        const copied = document.execCommand('copy'); area.remove();
+        if (!copied) throw new Error('Select the suggestion and press Command+C (or Ctrl+C) to copy it.');
+      }
+      status('Suggestion copied.');
+    });
+    $('tone').value = boot.settings.tone;
+    $('effort').value = boot.settings.effort;
+    if (boot.selection) captured(boot.selection);
+    run(async () => {
+      const ready = await connect();
+      if (boot.error) status(boot.error, true);
+      else if (!ready) status('Finish setup to get started: see Connection below.', true);
+      else if (boot.autoRun && selection) await generate();
+    });
+  </script>
+</body>
+</html>
