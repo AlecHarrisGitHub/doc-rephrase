@@ -61,7 +61,8 @@ A) Load the extension (once):
 B) Add Doc Rephrase to a Google Doc (once per document):
    In the doc: Extensions -> Apps Script -> replace the contents of Code.gs with the script
    (it is on your clipboard now; it is also in dist/Code.gs) -> Save -> reload the doc.
-   The first time, Google asks you to authorize the script.
+   Then choose Doc Rephrase -> Open sidebar / settings. Google warns "Google hasn't verified this app"
+   because it is your own copy: click Advanced -> Go to Doc Rephrase (unsafe) -> Allow.
 
 Then highlight text and press Option+Shift+R, or use Doc Rephrase -> Rephrase selection.
 The first rewrite each Chrome session asks once for 1Password / macOS approval.
