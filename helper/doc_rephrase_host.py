@@ -76,8 +76,11 @@ class KeyCache:
         self.ref = self.key = None
         self.fetched = 0.0
 
+    def ready(self, op_ref):
+        return self.key is not None and self.ref == op_ref and self.clock() - self.fetched <= KEY_TTL_SECONDS
+
     def get(self, op_ref):
-        if self.key is None or self.ref != op_ref or self.clock() - self.fetched > KEY_TTL_SECONDS:
+        if not self.ready(op_ref):
             self.key, self.ref, self.fetched = self.read_key(op_ref), op_ref, self.clock()
         return self.key
 
@@ -225,11 +228,12 @@ def call_claude(api_key, params):
         raise UserError('Could not reach Anthropic. Check your connection and try again.')
 
 
-def handle(message, config=None, read_key=read_api_key, call=call_claude):
+def handle(message, config=None, read_key=read_api_key, call=call_claude, key_ready=lambda ref: False):
     config = config or load_config()
     kind = message.get('type') if isinstance(message, dict) else None
     if kind == 'ping':
-        return {'ok': True, 'version': VERSION, 'model': config['model'],
+        # key_ready tells the sidebar whether the next rewrite will need 1Password approval.
+        return {'ok': True, 'version': VERSION, 'model': config['model'], 'key_ready': key_ready(config['op_ref']),
                 'configured': config['op_ref'].startswith('op://'), 'op_installed': bool(find_op())}
     if kind != 'rewrite':
         raise UserError('Unknown request.')
@@ -250,7 +254,7 @@ def serve(stdin, stdout, cache=None, handler=handle):
             return
         request_id = message.get('id') if isinstance(message, dict) else None
         try:
-            reply = handler(message, read_key=cache.get)
+            reply = handler(message, read_key=cache.get, key_ready=cache.ready)
         except KeyRejected as e:
             cache.clear()
             reply = {'ok': False, 'error': str(e)}

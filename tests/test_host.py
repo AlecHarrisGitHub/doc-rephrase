@@ -27,6 +27,8 @@ class HostTests(unittest.TestCase):
         reply = host.handle({'type': 'ping'}, CONFIG, read_key=lambda ref: self.fail('read key on ping'))
         self.assertTrue(reply['ok'])
         self.assertTrue(reply['configured'])
+        self.assertFalse(reply['key_ready'])
+        self.assertTrue(host.handle({'type': 'ping'}, CONFIG, key_ready=lambda ref: True)['key_ready'])
         self.assertEqual(reply['model'], 'claude-opus-5-5')
 
     def test_rewrite_reads_key_per_request_and_returns_paragraphs(self):
@@ -100,7 +102,10 @@ class HostTests(unittest.TestCase):
         self.assertEqual(cache.get('op://a'), 'sk-ant-1')
         now[0] = host.KEY_TTL_SECONDS + 1
         self.assertEqual(cache.get('op://a'), 'sk-ant-2')
+        self.assertTrue(cache.ready('op://a'))
+        self.assertFalse(cache.ready('op://other'))
         cache.clear()
+        self.assertFalse(cache.ready('op://a'))
         self.assertEqual(cache.get('op://a'), 'sk-ant-3')
         self.assertEqual(len(reads), 3)
 
@@ -113,7 +118,7 @@ class HostTests(unittest.TestCase):
         reads = []
         cache = host.KeyCache(lambda ref: reads.append(ref) or 'k')
         calls = []
-        def handler(message, read_key):
+        def handler(message, read_key, key_ready):
             calls.append(read_key('op://x'))
             if message.get('reject'):
                 raise host.KeyRejected('rejected')

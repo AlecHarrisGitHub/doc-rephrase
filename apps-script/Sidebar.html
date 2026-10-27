@@ -175,10 +175,11 @@
       try { captured(await rpc('captureSelection')); }
       catch (e) { if (!selection || applied) throw e; }
       $('result').hidden = true;
-      status('Reading your document…');
+      // The helper keeps the key for the Chrome session, so only the first rewrite waits on 1Password.
+      status(helper && helper.key_ready ? 'Writing a suggestion…' : 'Writing a suggestion… Approve 1Password if it asks.');
       const prepared = await rpc('prepareRephrase', selection.token, $('tone').value, $('guidance').value, $('effort').value);
-      status('Waiting for 1Password approval and Claude’s rewrite…');
       const value = await bridge(prepared.request, 630000);
+      if (helper) helper.key_ready = true;
       $('editors').replaceChildren();
       value.paragraphs.forEach((text, index) => {
         const label = document.createElement('label'); label.textContent = value.paragraphs.length > 1 ? 'Paragraph ' + (index + 1) : 'Your editable suggestion';
