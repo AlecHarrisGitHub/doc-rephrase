@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doc Rephrase</title>
+  <style>
+    :root {color-scheme: light; --ink:#202c29; --muted:#65716b; --green:#18664e; --line:#dce3dc;}
+    * {box-sizing:border-box}
+    body {margin:0; padding:16px 16px 28px; color:var(--ink); background:#f8faf7; font:13px/1.5 system-ui,sans-serif;}
+    .eyebrow {font-size:10px; font-weight:750; letter-spacing:.14em; color:var(--green); text-transform:uppercase}
+    p {margin:6px 0 14px} .muted,small {color:var(--muted)} small {font-size:11px; display:block; margin-top:7px}
+    label {display:block; font-weight:650; margin:16px 0 6px}
+    select,textarea,button {font:inherit; border-radius:8px}
+    select,textarea {width:100%; padding:10px; border:1px solid #cbd6cc; background:white; color:var(--ink)}
+    textarea {resize:vertical; min-height:76px; line-height:1.55}
+    button {cursor:pointer; border:1px solid var(--line); padding:10px 12px; background:white; color:var(--ink); font-weight:650}
+    button:disabled {opacity:.5; cursor:wait}
+    button:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible {outline:3px solid #8bbda8; outline-offset:2px}
+    .primary {width:100%; background:var(--green); color:white; border-color:var(--green)}
+    .secondary {width:100%; margin-top:8px}
+    .row {display:flex; gap:8px; margin-top:10px} .row button {flex:1}
+    .card {background:white; border:1px solid var(--line); border-radius:12px; padding:13px; margin:14px 0}
+    .original {white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:auto; font-family:Georgia,serif; color:#4a5751; margin-top:8px}
+    .divider {height:1px; background:var(--line); margin:20px 0}
+    details {margin:12px 0} summary {cursor:pointer; font-weight:650}
+    #status {border-radius:8px; padding:10px; background:#e7efe8; margin:12px 0; white-space:pre-wrap; overflow-wrap:anywhere}
+    #status.error {background:#fae9e3; color:#853723}
+    [hidden] {display:none!important}
+    #result textarea {min-height:110px; font-family:Georgia,serif; font-size:15px}
+    .hint {font-size:12px; color:var(--muted); margin:0 0 4px}
+    .hint kbd {font:600 12px/1 system-ui,sans-serif; color:var(--ink); background:white; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:3px 6px}
+    #note {font-size:12px; color:var(--muted); margin:10px 0}
+    #context {font-size:10px; color:var(--muted); margin-top:12px}
+    .pill {display:inline-block; font-size:10px; color:var(--green); background:#e6efe7; padding:3px 7px; border-radius:20px}
+  </style>
+</head>
+<body>
+  <div id="shortcutHint" class="hint"></div>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  <section id="selected" class="card" hidden>
+    <span class="eyebrow">Your selection</span> <span id="docTitle" class="pill"></span>
+    <div id="original" class="original"></div>
+  </section>
+  <label for="tone">Make it sound…</label>
+  <select id="tone">
+    <option value="natural">Natural and polished</option><option value="concise">More concise</option>
+    <option value="professional">Professional</option><option value="academic">Academic and precise</option>
+    <option value="friendly">Warm and conversational</option>
+  </select>
+  <label for="effort">Effort</label>
+  <select id="effort">
+    <option value="low">Low · fastest</option><option value="medium">Medium</option>
+    <option value="high">High · more careful</option><option value="max">Max · slowest</option>
+  </select>
+  <details><summary>Extra direction</summary>
+    <label for="guidance">Anything to keep in mind?</label>
+    <textarea id="guidance" maxlength="2000" placeholder="e.g. Keep my voice and make the argument easier to follow."></textarea>
+  </details>
+  <button id="generate" class="primary">Suggest a rewrite</button>
+  <small>Rewrites the text highlighted in your Google Doc. The document’s text is sent to Anthropic’s Claude API from the Doc Rephrase helper on this computer.</small>
+  <section id="result" class="card" hidden>
+    <div class="eyebrow">Suggested rewrite</div>
+    <div id="editors"></div><p id="note"></p>
+    <button id="apply" class="primary">Replace original passage</button>
+    <div class="row"><button id="copy">Copy text</button><button id="again">Try again</button></div>
+    <small>Edit the suggestion before replacing. The new text takes the formatting where your selection starts; Cmd+Z in the document undoes it.</small>
+    <div id="context"></div>
+  </section>
+  <div class="divider"></div>
+  <details id="connection">
+    <summary>Connection <span id="helperStatus" class="pill"></span></summary>
+    <p id="helperInfo" class="muted"></p>
+    <button id="recheck" class="secondary">Check connection again</button>
+    <small>Your API key stays in 1Password. The helper reads it on the first rewrite after Chrome starts and keeps it in memory until you quit Chrome.</small>
+  </details>
+  <script src="panel.js"></script>
+</body>
+</html>

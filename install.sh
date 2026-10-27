@@ -51,20 +51,15 @@ bold "3/4  Helper"
 ARGS=(--op-ref "$OP_REF"); [ -n "$MODEL" ] && ARGS+=(--model "$MODEL")
 "$ROOT/helper/install-helper.sh" "${ARGS[@]}"
 
-bold "4/4  Two steps in Chrome and Google Docs"
-LANG=en_US.UTF-8 pbcopy < "$ROOT/dist/Code.gs"
+bold "4/4  Chrome extension"
 cat <<EOF
-A) Load the extension (once):
+Load the extension (once):
    chrome://extensions  ->  turn on Developer mode  ->  Load unpacked  ->  choose:
    $ROOT/extension
+(Already loaded an older version? It updates itself the next time you use it.)
 
-B) Add Doc Rephrase to a Google Doc (once per document):
-   In the doc: Extensions -> Apps Script -> replace the contents of Code.gs with the script
-   (it is on your clipboard now; it is also in dist/Code.gs) -> Save -> reload the doc.
-   Then choose Doc Rephrase -> Open sidebar / settings. Google warns "Google hasn't verified this app"
-   because it is your own copy: click Advanced -> Go to Doc Rephrase (unsafe) -> Allow.
-
-Then highlight text and press Option+Shift+R, or use Doc Rephrase -> Rephrase selection.
-The first rewrite each Chrome session asks once for 1Password / macOS approval.
+Then, in any Google Doc you can edit: highlight text and press Option+Shift+R.
+Suggestions appear in Chrome's side panel. The first rewrite after Chrome starts asks once
+for 1Password (and macOS) approval.
 EOF
 open -R "$ROOT/extension/manifest.json" 2>/dev/null || true

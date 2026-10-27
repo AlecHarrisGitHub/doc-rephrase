@@ -1,19 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Doc Rephrase",
-  "version": "2.1.0",
-  "description": "Connects the Doc Rephrase Google Docs sidebar to the local helper, and adds a keyboard shortcut.",
+  "version": "3.0.0",
+  "description": "Highlight text in any Google Doc, press a shortcut, and get a Claude rewrite in the side panel.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4JpyqJ4WUILX8MqumNQ9JBO2S/rv9qG4rRB2qoOgw4uIN36vInGpY1DP4d+AesJKWttjd6SImk1Y03InH35a8fyC0a2ErvsoQz+54A6etAF9oglkyMksXhVU8jhlosaYxAfF1JsKSvm4/pyav7J8SGUQa9GiV1c3JYgkkky3C3v8mrvwThqcmaaLV6l3IgnasGQKqljvjJtzXoasGyF5EViurt/0e+NsQZ/wx1sp19GgobkSJeh6cDtik5ZHtdui6iTYhRcW7Ou3iC1qsDhIo3ZoiV6k48xiv49zVg923e/SkiwAlGCz26qVXeNoffkf9RghqOTrwKea03D3/N032QIDAQAB",
   "permissions": [
     "activeTab",
     "scripting",
-    "nativeMessaging"
+    "nativeMessaging",
+    "sidePanel",
+    "storage",
+    "offscreen",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Rephrase selected text in Google Docs"
+    "default_title": "Rephrase the highlighted text"
   },
   "commands": {
     "_execute_action": {
@@ -23,23 +28,10 @@
       }
     }
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.googleusercontent.com/*"
-      ],
-      "js": [
-        "relay.js"
-      ],
-      "all_frames": true,
-      "match_about_blank": true,
-      "match_origin_as_fallback": true,
-      "run_at": "document_start"
-    }
+  "host_permissions": [
+    "https://docs.google.com/*"
   ],
-  "externally_connectable": {
-    "matches": [
-      "https://*.googleusercontent.com/*"
-    ]
+  "side_panel": {
+    "default_path": "panel.html"
   }
 }
