@@ -6,7 +6,7 @@ talks to it over stdin/stdout (4-byte little-endian length + UTF-8 JSON).
 The Anthropic API key is never written to disk. It is read from 1Password with
 `op read <reference>` on the first rewrite, then held in this process's memory
 while Chrome keeps the connection open (at most 12 hours), and discarded when the
-process exits. Only the 1Password *reference* is kept in config.json. Only the 1Password *reference* (for example
+process exits. Only the 1Password *reference* (for example
 op://Private/Anthropic API Key/credential) is kept in config.json.
 """
 
@@ -16,11 +16,12 @@ import struct
 import subprocess
 import sys
 
-VERSION = '2.2.0'
+VERSION = '2.3.0'
 KEY_TTL_SECONDS = 12 * 3600
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, 'config.json')
 DEFAULT_MODEL = 'claude-opus-5-5'
+LOG_PATH = os.path.expanduser('~/Library/Logs/DocRephrase/helper.log')
 OP_CANDIDATES = ['/opt/homebrew/bin/op', '/usr/local/bin/op', '/usr/bin/op']
 
 MAX_CONTEXT = 200000
@@ -135,6 +136,8 @@ def friendly_op_error(stderr):
     if 'dismissed' in lower or 'denied' in lower or 'cancel' in lower:
         return '1Password access was declined. Click Try again and approve the 1Password prompt.'
     if any(e in lower for e in TRANSIENT_OP_ERRORS):
+        if 'locked' in lower:
+            return '1Password is locked. Unlock it (Doc Rephrase opened it for you), then click Try again.'
         return ('Could not reach the 1Password app. Make sure it is open and unlocked. If macOS asks whether '
                 '"Doc Rephrase Helper" can access data from other apps, click Allow. Also check 1Password > Settings > '
                 'Developer > "Integrate with 1Password CLI". Then click Try again.')
@@ -142,11 +145,26 @@ def friendly_op_error(stderr):
     return '1Password could not provide the key (' + (detail[:200] or 'unknown error') + '). Click Try again.'
 
 
-def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, attempts=4):
+def log_event(text):
+    """Append a line to the helper log (1Password errors only; op's stderr never contains the secret)."""
+    import time
+    try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 200000:
+            os.replace(LOG_PATH, LOG_PATH + '.old')
+        with open(LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S ') + ' '.join(str(text).split())[:500] + '\n')
+    except OSError:
+        pass
+
+
+def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, log=None, attempts=8):
     # op runs as an ordinary child, so macOS attributes its 1Password access to Doc Rephrase Helper.app.
     import time
     sleep = sleep or time.sleep
-    launch = launch or (lambda: subprocess.run(['/usr/bin/open', '-g', '-a', '1Password'], capture_output=True, timeout=15))
+    log = log or log_event
+    # Brings 1Password to the front, so a locked vault shows its unlock screen instead of failing silently.
+    launch = launch or (lambda: subprocess.run(['/usr/bin/open', '-a', '1Password'], capture_output=True, timeout=15))
     if not op_ref.startswith('op://'):
         raise UserError('Set your 1Password reference: run ./install.sh in the doc-rephrase folder.')
     op = find_op()
@@ -157,21 +175,25 @@ def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, attempts=4
         try:
             result = run([op, 'read', '--no-newline', op_ref], capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
+            log('op read timed out')
             raise UserError('Timed out waiting for 1Password approval. Click Try again and approve the 1Password prompt.')
         if result.returncode == 0:
             key = result.stdout.strip()
             if not key:
                 raise UserError('The 1Password item is empty. Check the reference, then run ./install.sh again.')
+            if attempt:
+                log('op read succeeded after %d retries' % attempt)
             return key
         stderr = result.stderr or ''
+        log('op read failed (attempt %d): %s' % (attempt + 1, stderr))
         if not any(e in stderr.lower() for e in TRANSIENT_OP_ERRORS) or attempt == attempts - 1:
             break
         if attempt == 0:
             try:
-                launch()  # Starts 1Password in the background if it isn't running; harmless if it is.
+                launch()  # Opens 1Password (and its unlock screen) if it is closed or locked.
             except Exception:
                 pass
-        sleep(2 + 2 * attempt)  # About 20 seconds in total for unlocking or approving.
+        sleep(min(2 + 2 * attempt, 10))  # About a minute in total for unlocking or approving.
     raise UserError(friendly_op_error(stderr))
 
 

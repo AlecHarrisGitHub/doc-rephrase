@@ -59,7 +59,8 @@ The extension asks Chrome for clipboard access only so it can put your clipboard
 | What you see | What to do |
 | --- | --- |
 | Connection: *helper is not installed* | Run `./install.sh` again, then quit and reopen Chrome. |
-| An error mentioning 1Password | Unlock 1Password, check **Settings → Developer → Integrate with 1Password CLI**, and test with `op read "op://…"` in Terminal. |
+| *1Password is locked* | Unlock 1Password (Doc Rephrase brings it to the front), then click **Try again**. |
+| Another error mentioning 1Password | Unlock 1Password, check **Settings → Developer → Integrate with 1Password CLI**, and test with `op read "op://…"` in Terminal. The helper writes 1Password's exact error (never the key) to `~/Library/Logs/DocRephrase/helper.log`. |
 | *Highlight some text in the document first* | Click into the document, highlight words, then press the shortcut again. |
 | *The highlighted text changed* | Highlight the original passage again before clicking Replace, or use **Copy text**. |
 | *…includes an image, drawing, equation, or footnote* | Highlight only the words next to it. |

@@ -5,11 +5,14 @@ import os
 import struct
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'helper'))
 import doc_rephrase_host as host  # noqa: E402
+
+host.LOG_PATH = os.path.join(tempfile.mkdtemp(), 'helper.log')  # Keep tests out of the real log.
 
 CONFIG = {'op_ref': 'op://Private/Anthropic API Key/credential', 'model': 'claude-opus-5-5'}
 REQUEST = {'type': 'rewrite', 'context': 'TAB: Draft\nBefore awkward words after.', 'selected_tab': 'Draft',
@@ -119,8 +122,23 @@ class HostTests(unittest.TestCase):
         run, calls = always('[ERROR] 2026/10/29 17:04:01 error initializing client: timed out')
         with self.assertRaisesRegex(host.UserError, 'Make sure it is open and unlocked') as caught:
             host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None)
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 8)
         self.assertNotIn('[ERROR]', str(caught.exception))
+        run, calls = always('[ERROR] 2026/10/30 09:12:00 account is locked')
+        with self.assertRaisesRegex(host.UserError, '1Password is locked'):
+            host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None, log=lambda t: None)
+
+    def test_logs_1password_errors_but_never_the_key(self):
+        host.find_op = lambda: '/opt/homebrew/bin/op'
+        logged = []
+        outcomes = ['[ERROR] error initializing client', None]
+        def flaky(args, **kw):
+            err = outcomes.pop(0)
+            return subprocess.CompletedProcess(args, 0 if err is None else 1, stdout='sk-ant-hidden' if err is None else '', stderr=err or '')
+        host.read_api_key(CONFIG['op_ref'], run=flaky, sleep=lambda s: None, launch=lambda: None, log=logged.append)
+        self.assertEqual(len(logged), 2)
+        self.assertIn('error initializing client', logged[0])
+        self.assertNotIn('sk-ant-hidden', ' '.join(logged))
 
     def test_key_is_cached_in_memory_until_ttl_or_rejection(self):
         reads, now = [], [0.0]
