@@ -59,7 +59,6 @@ Load the extension (once):
 (Already loaded an older version? It updates itself the next time you use it.)
 
 Then, in any Google Doc you can edit: highlight text and press Option+Shift+R.
-Suggestions appear in Chrome's side panel. The first rewrite after Chrome starts asks once
-for 1Password (and macOS) approval.
+Suggestions appear in Chrome's side panel.
 EOF
 open -R "$ROOT/extension/manifest.json" 2>/dev/null || true

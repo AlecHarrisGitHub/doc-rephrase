@@ -120,13 +120,24 @@ class HostTests(unittest.TestCase):
             host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None)
         self.assertEqual(len(calls), 1)
         run, calls = always('[ERROR] 2026/10/29 17:04:01 error initializing client: timed out')
-        with self.assertRaisesRegex(host.UserError, 'Make sure it is open and unlocked') as caught:
+        with self.assertRaisesRegex(host.UserError, 'Could not reach the 1Password app') as caught:
             host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None)
-        self.assertEqual(len(calls), 8)
+        self.assertEqual(len(calls), 5)
         self.assertNotIn('[ERROR]', str(caught.exception))
-        run, calls = always('[ERROR] 2026/10/30 09:12:00 account is locked')
-        with self.assertRaisesRegex(host.UserError, '1Password is locked'):
+        run, calls = always("[ERROR] 2026/10/30 12:41:26 No accounts configured for use with 1Password CLI. - Turn on the "
+                            "1Password desktop app integration")
+        with self.assertRaisesRegex(host.UserError, 'could not connect to the 1Password app'):
             host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None, log=lambda t: None)
+        self.assertEqual(len(calls), 1)  # Not retried, and 1Password isn't opened.
+
+    def test_runs_op_as_its_own_process_when_the_runner_is_installed(self):
+        host.find_op = lambda: '/opt/homebrew/bin/op'
+        calls = []
+        def ok(args, **kw):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, stdout='sk-ant-x', stderr='')
+        host.read_api_key(CONFIG['op_ref'], run=ok, run_as_own='/bin/echo')
+        self.assertEqual(calls[0][:2], ['/bin/echo', '/opt/homebrew/bin/op'])
 
     def test_logs_1password_errors_but_never_the_key(self):
         host.find_op = lambda: '/opt/homebrew/bin/op'

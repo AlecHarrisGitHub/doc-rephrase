@@ -16,12 +16,13 @@ import struct
 import subprocess
 import sys
 
-VERSION = '2.3.0'
+VERSION = '2.4.0'
 KEY_TTL_SECONDS = 12 * 3600
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, 'config.json')
 DEFAULT_MODEL = 'claude-opus-5-5'
 LOG_PATH = os.path.expanduser('~/Library/Logs/DocRephrase/helper.log')
+RUN_AS_OWN = os.path.join(APP_DIR, 'Doc Rephrase Helper.app', 'Contents', 'MacOS', 'run-as-own')
 OP_CANDIDATES = ['/opt/homebrew/bin/op', '/usr/local/bin/op', '/usr/bin/op']
 
 MAX_CONTEXT = 200000
@@ -120,10 +121,9 @@ def find_op():
     return None
 
 
-# op errors that usually clear up on their own: the 1Password app is starting, locked, or waiting
-# for Touch ID / the macOS "access data from other apps" prompt. Worth waiting and retrying.
-TRANSIENT_OP_ERRORS = ('error initializing client', 'connecting to desktop app', 'desktop app', 'timed out',
-                       'connection reset', 'not signed in', 'locked', 'no response')
+# op errors that usually clear up on their own: the 1Password app is starting or busy. Worth retrying.
+TRANSIENT_OP_ERRORS = ('error initializing client', 'connecting to desktop app', 'timed out',
+                       'connection reset', 'no response')
 
 
 def friendly_op_error(stderr):
@@ -133,14 +133,13 @@ def friendly_op_error(stderr):
     if "isn't an item" in lower or 'could not find item' in lower or 'no item found' in lower or "isn't a vault" in lower:
         return ('1Password could not find the item in your reference. Check it, then run ./install.sh again '
                 'with the correct op://vault/item/credential reference.')
+    if 'no accounts configured' in lower:
+        return ('Doc Rephrase could not connect to the 1Password app. Make sure 1Password is running and '
+                'Settings > Developer > "Integrate with 1Password CLI" is on, then click Try again.')
     if 'dismissed' in lower or 'denied' in lower or 'cancel' in lower:
         return '1Password access was declined. Click Try again and approve the 1Password prompt.'
     if any(e in lower for e in TRANSIENT_OP_ERRORS):
-        if 'locked' in lower:
-            return '1Password is locked. Unlock it (Doc Rephrase opened it for you), then click Try again.'
-        return ('Could not reach the 1Password app. Make sure it is open and unlocked. If macOS asks whether '
-                '"Doc Rephrase Helper" can access data from other apps, click Allow. Also check 1Password > Settings > '
-                'Developer > "Integrate with 1Password CLI". Then click Try again.')
+        return 'Could not reach the 1Password app. Make sure it is running, then click Try again.'
     detail = text.split('] ', 1)[-1] if text.startswith('[') else text  # drop op's "[ERROR] date time" prefix
     return '1Password could not provide the key (' + (detail[:200] or 'unknown error') + '). Click Try again.'
 
@@ -158,22 +157,23 @@ def log_event(text):
         pass
 
 
-def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, log=None, attempts=8):
-    # op runs as an ordinary child, so macOS attributes its 1Password access to Doc Rephrase Helper.app.
+def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, log=None, attempts=5, run_as_own=RUN_AS_OWN):
     import time
     sleep = sleep or time.sleep
     log = log or log_event
-    # Brings 1Password to the front, so a locked vault shows its unlock screen instead of failing silently.
-    launch = launch or (lambda: subprocess.run(['/usr/bin/open', '-a', '1Password'], capture_output=True, timeout=15))
+    # Starts 1Password in the background if it isn't running; never brings it to the front.
+    launch = launch or (lambda: subprocess.run(['/usr/bin/open', '-g', '-a', '1Password'], capture_output=True, timeout=15))
     if not op_ref.startswith('op://'):
         raise UserError('Set your 1Password reference: run ./install.sh in the doc-rephrase folder.')
     op = find_op()
     if not op:
         raise UserError('1Password CLI (op) is not installed. Run ./install.sh in the doc-rephrase folder.')
+    # Run op as its own responsible process, so macOS doesn't ask on the helper's behalf (see run-as-own.c).
+    own = [run_as_own] if run_as_own and os.access(run_as_own, os.X_OK) else []
     stderr = ''
     for attempt in range(attempts):
         try:
-            result = run([op, 'read', '--no-newline', op_ref], capture_output=True, text=True, timeout=120)
+            result = run(own + [op, 'read', '--no-newline', op_ref], capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             log('op read timed out')
             raise UserError('Timed out waiting for 1Password approval. Click Try again and approve the 1Password prompt.')
@@ -190,10 +190,10 @@ def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, log=None, 
             break
         if attempt == 0:
             try:
-                launch()  # Opens 1Password (and its unlock screen) if it is closed or locked.
+                launch()
             except Exception:
                 pass
-        sleep(min(2 + 2 * attempt, 10))  # About a minute in total for unlocking or approving.
+        sleep(2 + 2 * attempt)  # About 20 seconds in total while 1Password starts.
     raise UserError(friendly_op_error(stderr))
 
 

@@ -35,7 +35,7 @@ That's it. It works in every Google Doc you can edit.
 - Pick a **tone** and an **effort** level. Low is fastest; High and Max think longer and cost more.
 - Edit the suggestion if you like, then **Replace original passage**, **Copy text**, or **Try again**.
 
-The first rewrite after Chrome starts asks you to approve access twice: once in 1Password, and once in a macOS popup ("Doc Rephrase Helper would like to access data from other apps"). Click **Allow**. The key is then kept in memory until you quit Chrome (at most 12 hours).
+The helper reads the key from the 1Password app in the background; there are no popups to click. If 1Password ever asks you to approve access for the 1Password CLI, approve it once. The key is then kept in memory until you quit Chrome (at most 12 hours).
 
 ## How it works
 
@@ -59,7 +59,6 @@ The extension asks Chrome for clipboard access only so it can put your clipboard
 | What you see | What to do |
 | --- | --- |
 | Connection: *helper is not installed* | Run `./install.sh` again, then quit and reopen Chrome. |
-| *1Password is locked* | Unlock 1Password (Doc Rephrase brings it to the front), then click **Try again**. |
 | Another error mentioning 1Password | Unlock 1Password, check **Settings → Developer → Integrate with 1Password CLI**, and test with `op read "op://…"` in Terminal. The helper writes 1Password's exact error (never the key) to `~/Library/Logs/DocRephrase/helper.log`. |
 | *Highlight some text in the document first* | Click into the document, highlight words, then press the shortcut again. |
 | *The highlighted text changed* | Highlight the original passage again before clicking Replace, or use **Copy text**. |
