@@ -64,7 +64,11 @@ async function setState(tabId, value) { await chrome.storage.session.set({[state
 
 // Capture the highlighted passage and the document text. Throws a readable error.
 async function capture(tabId) {
-  const sel = await readSelection(tabId);
+  let sel = await readSelection(tabId).catch(() => null);
+  if (!sel || !sel.ok) {  // The document may still be loading; give it a moment and try once more.
+    await new Promise(resolve => setTimeout(resolve, 600));
+    sel = await readSelection(tabId).catch(e => ({ok: false, error: 'Reload the document and try again (' + e.message + ').'}));
+  }
   if (!sel || !sel.ok) throw new Error((sel && sel.error) || 'Could not read the selection. Reload the document and try again.');
   if (!sel.text.trim()) throw new Error('Highlight some text in the document first.');
   if (sel.embedded) throw new Error('Your selection includes an image, drawing, equation, or footnote. Highlight only the words around it.');
@@ -96,17 +100,22 @@ function helperPort() {
   port.onDisconnect.addListener(() => {
     const error = friendlyNativeError(chrome.runtime.lastError && chrome.runtime.lastError.message);
     port = null;
-    for (const done of pending.values()) done({ok: false, error});
+    for (const done of pending.values()) done({ok: false, error, disconnected: true});
     pending.clear();
   });
   return port;
 }
-function askHelper(payload) {
+// If the helper was restarted or crashed mid-request, reconnect and try once more.
+async function askHelper(payload) {
+  const reply = await askHelperOnce(payload);
+  return reply && reply.disconnected ? askHelperOnce(payload) : reply;
+}
+function askHelperOnce(payload) {
   return new Promise(resolve => {
     const id = 'r' + (++nextId);
     pending.set(id, resolve);
     try { helperPort().postMessage(Object.assign({}, payload, {id})); }
-    catch (e) { pending.delete(id); port = null; resolve({ok: false, error: friendlyNativeError(String(e && e.message))}); }
+    catch (e) { pending.delete(id); port = null; resolve({ok: false, error: friendlyNativeError(String(e && e.message)), disconnected: true}); }
   });
 }
 

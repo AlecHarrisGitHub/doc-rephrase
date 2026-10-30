@@ -16,7 +16,7 @@ import struct
 import subprocess
 import sys
 
-VERSION = '2.1.0'
+VERSION = '2.2.0'
 KEY_TTL_SECONDS = 12 * 3600
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, 'config.json')
@@ -119,26 +119,60 @@ def find_op():
     return None
 
 
-def read_api_key(op_ref, run=subprocess.run):
+# op errors that usually clear up on their own: the 1Password app is starting, locked, or waiting
+# for Touch ID / the macOS "access data from other apps" prompt. Worth waiting and retrying.
+TRANSIENT_OP_ERRORS = ('error initializing client', 'connecting to desktop app', 'desktop app', 'timed out',
+                       'connection reset', 'not signed in', 'locked', 'no response')
+
+
+def friendly_op_error(stderr):
+    """Turn op's raw stderr (which never contains the secret) into an instruction."""
+    text = ' '.join((stderr or '').split())
+    lower = text.lower()
+    if "isn't an item" in lower or 'could not find item' in lower or 'no item found' in lower or "isn't a vault" in lower:
+        return ('1Password could not find the item in your reference. Check it, then run ./install.sh again '
+                'with the correct op://vault/item/credential reference.')
+    if 'dismissed' in lower or 'denied' in lower or 'cancel' in lower:
+        return '1Password access was declined. Click Try again and approve the 1Password prompt.'
+    if any(e in lower for e in TRANSIENT_OP_ERRORS):
+        return ('Could not reach the 1Password app. Make sure it is open and unlocked. If macOS asks whether '
+                '"Doc Rephrase Helper" can access data from other apps, click Allow. Also check 1Password > Settings > '
+                'Developer > "Integrate with 1Password CLI". Then click Try again.')
+    detail = text.split('] ', 1)[-1] if text.startswith('[') else text  # drop op's "[ERROR] date time" prefix
+    return '1Password could not provide the key (' + (detail[:200] or 'unknown error') + '). Click Try again.'
+
+
+def read_api_key(op_ref, run=subprocess.run, sleep=None, launch=None, attempts=4):
     # op runs as an ordinary child, so macOS attributes its 1Password access to Doc Rephrase Helper.app.
+    import time
+    sleep = sleep or time.sleep
+    launch = launch or (lambda: subprocess.run(['/usr/bin/open', '-g', '-a', '1Password'], capture_output=True, timeout=15))
     if not op_ref.startswith('op://'):
-        raise UserError('Set your 1Password reference in the helper config (run install-helper.sh with --op-ref).')
+        raise UserError('Set your 1Password reference: run ./install.sh in the doc-rephrase folder.')
     op = find_op()
     if not op:
-        raise UserError('1Password CLI (op) is not installed. Run: brew install --cask 1password-cli')
-    try:
-        result = run([op, 'read', '--no-newline', op_ref], capture_output=True, text=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        raise UserError('Timed out waiting for 1Password approval. Try again and approve the 1Password prompt.')
-    if result.returncode != 0:
-        # op's stderr names the problem (locked, not integrated, item missing) and never contains the secret.
-        detail = (result.stderr or '').strip().splitlines()[-1:] or ['unknown error']
-        raise UserError('1Password could not provide the key: ' + detail[0][:300] +
-                        ' Check that 1Password is unlocked and Settings > Developer > "Integrate with 1Password CLI" is on.')
-    key = result.stdout.strip()
-    if not key:
-        raise UserError('The 1Password item is empty. Check the reference in the helper config.')
-    return key
+        raise UserError('1Password CLI (op) is not installed. Run ./install.sh in the doc-rephrase folder.')
+    stderr = ''
+    for attempt in range(attempts):
+        try:
+            result = run([op, 'read', '--no-newline', op_ref], capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise UserError('Timed out waiting for 1Password approval. Click Try again and approve the 1Password prompt.')
+        if result.returncode == 0:
+            key = result.stdout.strip()
+            if not key:
+                raise UserError('The 1Password item is empty. Check the reference, then run ./install.sh again.')
+            return key
+        stderr = result.stderr or ''
+        if not any(e in stderr.lower() for e in TRANSIENT_OP_ERRORS) or attempt == attempts - 1:
+            break
+        if attempt == 0:
+            try:
+                launch()  # Starts 1Password in the background if it isn't running; harmless if it is.
+            except Exception:
+                pass
+        sleep(2 + 2 * attempt)  # About 20 seconds in total for unlocking or approving.
+    raise UserError(friendly_op_error(stderr))
 
 
 def validate_request(message):
@@ -205,7 +239,7 @@ def parse_response(response, count):
 
 def call_claude(api_key, params):
     import anthropic  # Imported lazily so ping and tests work without network setup.
-    client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=600.0)
+    client = anthropic.Anthropic(api_key=api_key, max_retries=4, timeout=600.0)  # Retries 429/5xx/overloaded with backoff.
     try:
         # Streaming avoids HTTP timeouts on long, high-effort responses; we only need the final message.
         with client.beta.messages.stream(**params) as stream:

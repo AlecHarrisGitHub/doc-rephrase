@@ -88,12 +88,39 @@ class HostTests(unittest.TestCase):
         host.find_op = lambda: '/opt/homebrew/bin/op'
         self.assertEqual(host.read_api_key(CONFIG['op_ref'], run=ok), 'sk-ant-secret')
         self.assertEqual(calls[0], ['/opt/homebrew/bin/op', 'read', '--no-newline', CONFIG['op_ref']])
-        def locked(args, **kw):
-            return subprocess.CompletedProcess(args, 1, stdout='', stderr='[ERROR] account is not signed in')
-        with self.assertRaisesRegex(host.UserError, 'not signed in'):
-            host.read_api_key(CONFIG['op_ref'], run=locked)
-        with self.assertRaisesRegex(host.UserError, 'op-ref'):
+        with self.assertRaisesRegex(host.UserError, 'install.sh'):
             host.read_api_key('', run=ok)
+
+    def test_waits_for_1password_launches_it_and_retries_transient_errors(self):
+        host.find_op = lambda: '/opt/homebrew/bin/op'
+        outcomes = ['[ERROR] 2026/10/29 17:04:01 could not read secret: error initializing client: connecting failed',
+                    '[ERROR] 2026/10/29 17:04:03 error initializing client', None]
+        sleeps, launches = [], []
+        def flaky(args, **kw):
+            err = outcomes.pop(0)
+            return subprocess.CompletedProcess(args, 0 if err is None else 1, stdout='sk-ant-ok' if err is None else '', stderr=err or '')
+        key = host.read_api_key(CONFIG['op_ref'], run=flaky, sleep=sleeps.append, launch=lambda: launches.append(1))
+        self.assertEqual(key, 'sk-ant-ok')
+        self.assertEqual(launches, [1])
+        self.assertEqual(len(sleeps), 2)
+
+    def test_gives_clear_errors_and_does_not_retry_permanent_ones(self):
+        host.find_op = lambda: '/opt/homebrew/bin/op'
+        def always(err):
+            calls = []
+            def run(args, **kw):
+                calls.append(1)
+                return subprocess.CompletedProcess(args, 1, stdout='', stderr=err)
+            return run, calls
+        run, calls = always('[ERROR] 2026/10/29 17:04:01 "Redwood API Key" isn\'t an item in the "Employee" vault')
+        with self.assertRaisesRegex(host.UserError, 'could not find the item'):
+            host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None)
+        self.assertEqual(len(calls), 1)
+        run, calls = always('[ERROR] 2026/10/29 17:04:01 error initializing client: timed out')
+        with self.assertRaisesRegex(host.UserError, 'Make sure it is open and unlocked') as caught:
+            host.read_api_key(CONFIG['op_ref'], run=run, sleep=lambda s: None, launch=lambda: None)
+        self.assertEqual(len(calls), 4)
+        self.assertNotIn('[ERROR]', str(caught.exception))
 
     def test_key_is_cached_in_memory_until_ttl_or_rejection(self):
         reads, now = [], [0.0]

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Doc Rephrase",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Highlight text in any Google Doc, press a shortcut, and get a Claude rewrite in the side panel.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4JpyqJ4WUILX8MqumNQ9JBO2S/rv9qG4rRB2qoOgw4uIN36vInGpY1DP4d+AesJKWttjd6SImk1Y03InH35a8fyC0a2ErvsoQz+54A6etAF9oglkyMksXhVU8jhlosaYxAfF1JsKSvm4/pyav7J8SGUQa9GiV1c3JYgkkky3C3v8mrvwThqcmaaLV6l3IgnasGQKqljvjJtzXoasGyF5EViurt/0e+NsQZ/wx1sp19GgobkSJeh6cDtik5ZHtdui6iTYhRcW7Ou3iC1qsDhIo3ZoiV6k48xiv49zVg923e/SkiwAlGCz26qVXeNoffkf9RghqOTrwKea03D3/N032QIDAQAB",
   "permissions": [

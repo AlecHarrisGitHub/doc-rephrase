@@ -45,18 +45,23 @@ test('sameText ignores Docs line-ending and trailing-space differences', () => {
 // ---------- background.js ----------
 function background({selection = 'awkward words', embedded = false, docHtml = '<div class="doc-content"><p>Before awkward words after.</p></div>',
   helperReply = {ok: true, paragraphs: ['clear words'], note: 'Clearer.', model: 'claude-opus-5-5'}, tabUrl = 'https://docs.google.com/document/d/abc/edit',
-  diskVersion = '3.0.0'} = {}) {
+  diskVersion = '3.0.1', dropFirstRewrite = false} = {}) {
+  let connections = 0, dropped = false;
   const listeners = {}, session = {}, sent = [], pasted = [], clipboardOps = [], reloads = [];
   let currentSelection = selection;
   const on = name => ({addListener: fn => { listeners[name] = fn; }});
   const chrome = {
     runtime: {id: 'ext', lastError: undefined, onMessage: on('message'),
-      getURL: p => 'chrome-extension://ext/' + p, getManifest: () => ({version: '3.0.0'}), reload: () => reloads.push(1),
+      getURL: p => 'chrome-extension://ext/' + p, getManifest: () => ({version: '3.0.1'}), reload: () => reloads.push(1),
       sendMessage: async message => { if (message.target === 'offscreen') { clipboardOps.push(message.op); return message.op === 'read' ? 'user clipboard' : true; } },
       connectNative: () => {
-        const msg = [];
-        return {onMessage: {addListener: fn => msg.push(fn)}, onDisconnect: {addListener() {}},
-          postMessage: payload => { sent.push(payload); const reply = payload.type === 'ping' ? {ok: true, configured: true, model: 'm'} : helperReply;
+        connections++;
+        const msg = [], disc = [];
+        return {onMessage: {addListener: fn => msg.push(fn)}, onDisconnect: {addListener: fn => disc.push(fn)},
+          postMessage: payload => {
+            sent.push(payload);
+            if (dropFirstRewrite && !dropped && payload.type === 'rewrite') { dropped = true; disc.forEach(fn => fn()); return; }
+            const reply = payload.type === 'ping' ? {ok: true, configured: true, model: 'm'} : helperReply;
             msg.forEach(fn => fn(Object.assign({}, reply, {id: payload.id}))); }};
       }},
     offscreen: {createDocument: async () => {}},
@@ -80,11 +85,11 @@ function background({selection = 'awkward words', embedded = false, docHtml = '<
     const keep = listeners.message(Object.assign({kind: 'panel'}, message), sender, resolve);
     if (!keep) resolve(undefined);
   });
-  return {ask, listeners, session, sent, pasted, clipboardOps, reloads, select: s => { currentSelection = s; }};
+  return {ask, listeners, session, sent, pasted, clipboardOps, reloads, connects: () => connections, select: s => { currentSelection = s; }};
 }
 
 test('status reports the helper, the real shortcut, and checks for an updated extension', async () => {
-  const b = background({diskVersion: '3.1.0'});
+  const b = background({diskVersion: '3.2.0'});
   const reply = await b.ask({action: 'status'});
   assert.equal(reply.ok, true);
   assert.equal(reply.isDoc, true);
@@ -178,4 +183,11 @@ test('manifest asks only for what the extension uses and keeps its fixed ID key'
   assert.equal(manifest.commands._execute_action.suggested_key.mac, 'Alt+Shift+R');
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.externally_connectable, undefined);
+});
+test('a helper that disconnects mid-request is reconnected and retried once', async () => {
+  const b = background({dropFirstRewrite: true});
+  const reply = await b.ask({action: 'rewrite', tone: 'natural', effort: 'low'});
+  assert.equal(reply.ok, true);
+  assert.deepEqual(plain(reply.paragraphs), ['clear words']);
+  assert.equal(b.connects(), 2);
 });
