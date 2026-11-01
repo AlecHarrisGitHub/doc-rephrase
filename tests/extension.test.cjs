@@ -67,7 +67,7 @@ function background({selection = 'awkward words', embedded = false, docHtml = '<
     offscreen: {createDocument: async () => {}},
     sidePanel: {setPanelBehavior: async () => {}, open: async () => {}},
     action: {onClicked: on('clicked')},
-    commands: {getAll: async () => [{name: '_execute_action', shortcut: '⌥⇧R'}]},
+    commands: {onCommand: on('command'), getAll: async () => [{name: 'rephrase', shortcut: '⌥⇧R'}]},
     tabs: {query: async () => [{id: 7, windowId: 1, url: tabUrl}]},
     storage: {session: {get: async k => ({[k]: session[k]}), set: async o => Object.assign(session, o)}},
     scripting: {executeScript: async ({func, args}) => {
@@ -132,9 +132,20 @@ test('outside Google Docs the panel explains what to do', async () => {
   const b = background({tabUrl: 'https://example.com/'});
   assert.match((await b.ask({action: 'rewrite'})).error, /Open a Google Doc/);
 });
-test('the shortcut opens the panel, captures the selection, and marks it to run automatically', async () => {
+test('the toolbar button opens the panel and shows the selection without running', async () => {
   const b = background();
   b.listeners.clicked({id: 7, windowId: 1, url: 'https://docs.google.com/document/d/abc/edit'});
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(b.session['tab:7'].original, 'awkward words');
+  assert.equal(b.session['tab:7'].autoRun, false);
+  assert.equal(b.sent.filter(m => m.type === 'rewrite').length, 0);
+  const status = await b.ask({action: 'status'});
+  assert.equal(status.shortcut, '⌥⇧R');
+  assert.equal(status.state.autoRun, false);
+});
+test('the shortcut opens the panel, captures the selection, and marks it to run automatically', async () => {
+  const b = background();
+  b.listeners.command('rephrase', {id: 7, windowId: 1, url: 'https://docs.google.com/document/d/abc/edit'});
   await new Promise(r => setTimeout(r, 10));
   assert.equal(b.session['tab:7'].original, 'awkward words');
   assert.equal(b.session['tab:7'].autoRun, true);
@@ -180,7 +191,7 @@ test('manifest asks only for what the extension uses and keeps its fixed ID key'
   assert.ok(manifest.key);
   assert.deepEqual(manifest.host_permissions, ['https://docs.google.com/*']);
   assert.equal(manifest.side_panel.default_path, 'panel.html');
-  assert.equal(manifest.commands._execute_action.suggested_key.mac, 'Alt+Shift+R');
+  assert.equal(manifest.commands.rephrase.suggested_key.mac, 'Alt+Shift+R');
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.externally_connectable, undefined);
 });

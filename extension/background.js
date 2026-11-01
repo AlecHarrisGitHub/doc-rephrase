@@ -133,15 +133,21 @@ async function reloadIfUpdated() {
   } catch (e) { /* Keep running the loaded version. */ }
 }
 
-// --- Shortcut / toolbar button: open the side panel and read the selection -----------------------
-chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: false}).catch(() => {});
-chrome.action.onClicked.addListener(tab => {
+// --- Shortcut and toolbar button: open the side panel and read the selection ---------------------
+// The shortcut writes a suggestion right away; the toolbar button only shows the selection.
+const COMMAND = 'rephrase';
+function openPanel(tab, autoRun) {
   chrome.sidePanel.open({windowId: tab.windowId}).catch(() => {}); // Must run inside the user gesture.
   const work = DOCS_URL.test(tab.url || '')
-    ? capture(tab.id).then(state => setState(tab.id, Object.assign(state, {autoRun: true})))
+    ? capture(tab.id).then(state => setState(tab.id, Object.assign(state, {autoRun})))
     : Promise.reject(new Error('Open a Google Doc, highlight a passage, then press the shortcut.'));
-  work.catch(e => setState(tab.id, {error: e.message, at: Date.now()}))
-    .then(() => chrome.runtime.sendMessage({kind: 'panel-refresh', tabId: tab.id}).catch(() => {}));
+  const failed = autoRun ? e => setState(tab.id, {error: e.message, at: Date.now()}) : () => {};
+  work.catch(failed).then(() => chrome.runtime.sendMessage({kind: 'panel-refresh', tabId: tab.id}).catch(() => {}));
+}
+chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: false}).catch(() => {});
+chrome.action.onClicked.addListener(tab => openPanel(tab, false));
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === COMMAND && tab) openPanel(tab, true);
 });
 
 // --- Requests from the side panel -----------------------------------------------------------------
@@ -159,7 +165,7 @@ async function handlePanel(message) {
       reloadIfUpdated();
       const helper = await askHelper({type: 'ping'});
       const commands = await chrome.commands.getAll();
-      const command = commands.find(c => c.name === '_execute_action');
+      const command = commands.find(c => c.name === COMMAND);
       const state = isDoc ? await getState(tab.id) : null;
       if (state && state.autoRun) await setState(tab.id, Object.assign({}, state, {autoRun: false}));
       return {ok: true, isDoc, helper, shortcut: (command && command.shortcut) || '', state: publicState(state)};

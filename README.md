@@ -31,7 +31,8 @@ That's it. It works in every Google Doc you can edit.
 
 ## Use
 
-- Highlight a passage and press **Option + Shift + R**, or click the Doc Rephrase toolbar button. The side panel opens and writes a suggestion. The panel shows your current shortcut; you can change it at `chrome://extensions/shortcuts`.
+- Highlight a passage and press **Option + Shift + R**. The side panel opens and writes a suggestion. The panel shows your current shortcut; you can change it at `chrome://extensions/shortcuts`.
+- Or click the Doc Rephrase toolbar button: the panel opens and shows your selection without writing anything until you click **Suggest a rewrite**.
 - Pick a **tone** and an **effort** level. Low is fastest; High and Max think longer and cost more.
 - Edit the suggestion if you like, then **Replace original passage**, **Copy text**, or **Try again**.
 
@@ -64,7 +65,7 @@ The extension asks Chrome for clipboard access only so it can put your clipboard
 | *The highlighted text changed* | Highlight the original passage again before clicking Replace, or use **Copy text**. |
 | *…includes an image, drawing, equation, or footnote* | Highlight only the words next to it. |
 | *Anthropic rejected the API key* / *model not found* | Check the key in your 1Password item, or switch models (see Settings). |
-| The shortcut does nothing | Set one at `chrome://extensions/shortcuts`, or click the toolbar button. |
+| The shortcut does nothing | Set one at `chrome://extensions/shortcuts`, or open the panel from the toolbar button and click **Suggest a rewrite**. |
 
 ## Settings
 

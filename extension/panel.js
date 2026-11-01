@@ -34,7 +34,7 @@ function showShortcut(shortcut) {
     hint.append('Highlight text in a Google Doc, then press ');
     const key = document.createElement('kbd'); key.textContent = shortcut; hint.append(key, '.');
   } else {
-    hint.textContent = 'Highlight text in a Google Doc, then click the Doc Rephrase toolbar button. Add a keyboard shortcut at chrome://extensions/shortcuts.';
+    hint.textContent = 'Highlight text in a Google Doc, then click Suggest a rewrite. Add a keyboard shortcut at chrome://extensions/shortcuts.';
   }
 }
 function showHelper(value, error) {
